@@ -267,31 +267,6 @@ class ListGroup extends React.Component {
 
   constructor(props) {
     super(props);
-    const [ unchecked, checked ] = props.content.split(/\n/).reduce((accum, line, id) => {
-        if(line.trim().length) {
-          let symbol = "*", text = line;
-          const match = line.match(/^ ?([\*|-]) ?(.+)/);
-          if (match) {
-            [, symbol, text] = match;
-          }
-          const checked = symbol === "*" ? 0 : symbol === "-" ? 1 : 0;
-          accum[checked].push({
-            id,
-            checked: checked === 1,
-            text
-          });
-        }
-        return accum;
-      }, [[] , []]);
-
-    this.state = {
-      items: [
-        ...unchecked,
-        ...checked
-      ]
-    };
-
-    this.onCheckboxClick = this.onCheckboxClick.bind(this);
   }
 
   splitItemsUnChecked(items) {
@@ -302,27 +277,12 @@ class ListGroup extends React.Component {
     }, [[], []]);
   }
 
-  onCheckboxClick(itemId) {
-    const index = this.state.items.findIndex(({id}) => id === itemId);
-    const items = [ ...this.state.items ];
-    items[index].checked = !items[index].checked;
-    // split items into check/unchecked with unchecked at the last
-    const [ unchecked, checked ] = this.splitItemsUnChecked(items);
-    this.setState({
-      items: [
-        ...unchecked,
-        ...checked
-      ]
-    });
-    // should we push the change up the heirarchy to change the actual symbol in the text
-  }
-
   render() {
     return rce(
       this.List,
       {},
       [
-        ...this.state.items.map(({ id, text, checked }) => rce(
+        ...this.props.content.map(({ id, text, checked }) => rce(
           this.ListItem,
           {
             classNames: checked ? [
@@ -334,7 +294,7 @@ class ListGroup extends React.Component {
             rce(
               this.Checkbox,
               {
-                onChange: () => this.onCheckboxClick(id),
+                onChange: () => this.props.onNoteCheckboxChange(+this.props.noteId, id),
                 checked,
                 key: `checkbox-${id}`
               },
@@ -357,17 +317,29 @@ class Content extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      viewMode: /^ ?[\*|-]/.test(props.content) ? 1 : 0
+      viewMode: 1
     };
   }
   render() {
-    return rce(
-      this.state.viewMode ? ListGroup : Text,
-      {
-        content: this.props.content
-      },
-      []
-    );
+    if (this.state.viewMode) {
+      return rce(
+        ListGroup,
+        {
+          noteId: this.props.noteId,
+          content: this.props.content,
+          onNoteCheckboxChange: this.props.onNoteCheckboxChange
+        },
+        []
+      );
+    } else {
+      return rce(
+        Text,
+        {
+          content: this.props.content
+        },
+        []
+      );
+    }
   }
 }
 
@@ -410,7 +382,7 @@ class Card extends React.Component {
         DeleteButton,
         {
           onNoteDelete,
-          shouldShowConfirm: this.props.note.content.trim().length !== 0 ||
+          shouldShowConfirm: this.props.note.content.length > 0 ||
             !this.props.settings.regex.title.test(this.props.note.title)
         }
       )
@@ -587,8 +559,8 @@ class Card_Note extends React.Component {
   }
 
   onNoteContentChange(e) {
-    const { value: content } = e.target;
-    if (content.length <= this.charLimits.content) {
+    if (e.target.value.length <= this.charLimits.content) {
+      const content = this.props.transformStringToArray(e.target.value);
       this.setState({
         note: {
           ...this.state.note,
@@ -633,7 +605,7 @@ class Card_Note extends React.Component {
       rce(
         TextArea,
         {
-          value: this.state.note.content,
+          value: this.props.transformArrayToString(this.state.note.content),
           onChange: this.onNoteContentChange
         }
       ),
@@ -653,7 +625,9 @@ class Card_Note extends React.Component {
       rce(
         Content, // should have bi-state display component
         {
-          content: this.state.note.content
+          noteId: this.state.note.id,
+          content: this.state.note.content,
+          onNoteCheckboxChange: this.props.onNoteCheckboxChange
         },
         []
       )
@@ -733,9 +707,12 @@ const Card_Container = ({
   todos,
   palette,
   onNoteColorChange,
+  onNoteCheckboxChange,
   onNoteSave,
   onNoteDelete,
-  onAddNote
+  onAddNote,
+  transformStringToArray,
+  transformArrayToString
 }) => {
   const cardNotes = notes.map((note) => {
     return rce(
@@ -745,8 +722,11 @@ const Card_Container = ({
         note,
         palette,
         onNoteColorChange,
+        onNoteCheckboxChange,
         onNoteSave,
         onNoteDelete,
+        transformStringToArray,
+        transformArrayToString
       }
     );
   });
@@ -852,32 +832,14 @@ class App extends React.Component {
     };
     this.settings.regex['title'] = new RegExp(`^${this.settings.strings.title}\\d+$`);
     this.state = {
-      notes: {},
-      todos: {} // a version of notes that is split into todo list types
+      notes: {}
     };
     this.getAllNotes = this.getAllNotes.bind(this);
     this.onNoteColorChange = this.onNoteColorChange.bind(this);
+    this.onNoteCheckboxChange = this.onNoteCheckboxChange.bind(this);
     this.onAddNote = this.onAddNote.bind(this);
     this.onNoteDelete = this.onNoteDelete.bind(this);
     this.onNoteSave = this.onNoteSave.bind(this);
-    /*
-    const [ unchecked, checked ] = props.content.split(/\n/).reduce((accum, line, id) => {
-        if(line.trim().length) {
-          let symbol = "*", text = line;
-          const match = line.match(/^ ?([\*|-]) ?(.+)/);
-          if (match) {
-            [, symbol, text] = match;
-          }
-          const checked = symbol === "*" ? 0 : symbol === "-" ? 1 : 0;
-          accum[checked].push({
-            id,
-            checked: checked === 1,
-            text
-          });
-        }
-        return accum;
-      }, [[] , []]);
-     */
   }
 
   componentDidMount() {
@@ -886,10 +848,13 @@ class App extends React.Component {
     if (items && items.length) {
       this.setState({
         notes: JSON.parse(items).reduce((accum, {id, content, ...rest}) => {
+          // TODO: should try to sort checked/unchecked here
           return {
             ...accum,
             [id]: {
-              content: content.split(/\n/),
+              content: !Array.isArray(content) ?
+                this.transformStringToArray(content) :
+                content,
               ...rest
             }
           };
@@ -898,8 +863,41 @@ class App extends React.Component {
     }
   }
 
+  /*
+   * Transform content from string into a list
+   */
+  transformStringToArray(str) {
+    const [ unchecked, checked ] = str.split(/\n/).reduce((accum, line, id) => {
+      if(line.trim().length) {
+        let symbol = "*", text = line;
+        const match = line.match(/^ ?([\*|-]) ?(.+)/);
+        if (match) {
+          [, symbol, text] = match;
+        }
+        const checked = symbol === "*" ? 0 : symbol === "-" ? 1 : 0;
+        accum[checked].push({
+          id,
+          checked: checked === 1,
+          text
+        });
+      }
+      return accum;
+    }, [[] , []]);
+    return [
+      ...unchecked,
+      ...checked
+    ];
+  }
+
+  /*
+   * Transform content from array to text
+   */
+  transformArrayToString(arr) {
+    return arr.map(line => `${line.checked ? '-' : '*'} ${line.text}`).join("\n");
+  }
+
   /**
-   * just want to watch state changes here
+   * Watch state chenges and keep localStorage in sync
    */
   shouldComponentUpdate(nextProps, nextState) {
     const { storage: { key }, regex: { title: titleRe } } = this.settings;
@@ -940,9 +938,22 @@ class App extends React.Component {
     }
   }
 
-  // TODO: Need to have the note item id live up at this level
-  // instead of any hacky stuff like search in notes for a string match
-  onNoteItemCheckboxChange(itemId, isChecked) {
+  onNoteCheckboxChange(noteId, contentId) {
+    // Currently processing as array but would probably make sense to have mapped
+    let { content } = this.state.notes[noteId];
+    const index = content.findIndex(({id})=> +id === +contentId);
+    content[index].checked = !content[index].checked;
+    // only sort if going from unchecked to checked
+    content = content[index].checked ? content.sort((a, b) => b.checked < a.checked ? 1 : -1) : content;
+    this.setState({
+      notes: {
+        ...this.state.notes,
+        [noteId]: {
+            ...this.state.notes[noteId],
+            content
+        }
+      }
+    });
   }
 
   onAddNote() {
@@ -958,7 +969,7 @@ class App extends React.Component {
         ...this.state.notes,
         [newId]: {
           title: `${title}${newId}`,
-          content: '',
+          content: [],
           modified: new Date().toISOString(),
           color
         }
@@ -1014,11 +1025,13 @@ class App extends React.Component {
                 settings: this.settings,
                 palette: this.palette,
                 notes: this.getAllNotes(),
-                todos: this.state.todos,
                 onNoteColorChange: this.onNoteColorChange,
+                onNoteCheckboxChange: this.onNoteCheckboxChange,
                 onNoteDelete: this.onNoteDelete,
                 onNoteSave: this.onNoteSave,
-                onAddNote: this.onAddNote
+                onAddNote: this.onAddNote,
+                transformStringToArray: this.transformStringToArray,
+                transformArrayToString: this.transformArrayToString,
               }
             ),
           ]
